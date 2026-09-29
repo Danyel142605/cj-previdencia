@@ -169,7 +169,7 @@ if menu_selecionado == "🆕 Novo Processo":
                 agora = datetime.now().strftime("%d/%m/%Y %H:%M")
                 dados_proc = {
                     "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, "grupo_acao": grupo_c, "etapa_atual": etapa_c,
-                    "ultima_atualizacao": grandmother_txt := agora, "usuario_responsavel": st.session_state['usuario_atual']
+                    "ultima_atualizacao": agora, "usuario_responsavel": st.session_state['usuario_atual']
                 }
                 try:
                     supabase.table("processos_v3").insert(dados_proc).execute()
