@@ -29,20 +29,6 @@ st.markdown("""
             margin-bottom: 25px;
             padding-left: 10px;
         }
-        .stTabs [data-baseweb="tab"] {
-            font-weight: 600;
-            color: #555;
-            background-color: #fff;
-            border: 1px solid #ddd;
-            border-radius: 4px 4px 0 0;
-            padding: 10px 20px;
-            margin-right: 4px;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: #3c8dbc !important;
-            color: white !important;
-            border-color: #3c8dbc !important;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -168,62 +154,53 @@ if st.session_state['perfil_atual'] == "Admin":
 
 menu_selecionado = st.sidebar.radio("Navegação:", opcoes_menu)
 
-# --- TELA: GERENCIAR EQUIPE ---
-if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
-    st.subheader("👥 Controle de Usuários e Suporte (Painel ADM)")
-    try:
-        res_users = supabase.table("usuarios_sistema").select("*").execute()
-        df_usuarios = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
-        
-        if not df_usuarios.empty:
-            st.dataframe(df_usuarios[["id", "nome", "identificador", "perfil", "status_liberacao"]], use_container_width=True, hide_index=True)
-            st.write("---")
-            user_sel = st.selectbox("Selecione o Funcionário para modificar:", df_usuarios['nome'].tolist())
-            row_user = df_usuarios[df_usuarios['nome'] == user_sel].iloc[0]
-            
-            nova_lib = st.selectbox("Alterar Status de Acesso:", ["Liberado", "Aguardando Liberação"], index=["Liberado", "Aguardando Liberação"].index(row_user['status_liberacao']))
-            novo_perf = st.selectbox("Mudar Perfil/Cargo:", ["Colaborador", "Admin"], index=["Colaborador", "Admin"].index(row_user['perfil']))
-            
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
-                    supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
-                    st.success("Cadastro atualizado na nuvem!")
-                    st.rerun()
-            with col_b2:
-                if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
-                    supabase.table("usuarios_sistema").delete().eq("id", int(row_user['id'])).execute()
-                    st.success("Funcionário removido.")
-                    st.rerun()
-        else: st.info("Nenhum funcionário cadastrado no banco de dados.")
-    except Exception:
-        st.error("Erro ao carregar lista de usuários.")
-
-# --- TELA: NOVO PROCESSO (FICHA DE CADASTRO LIMPA E SEM TRAVAS) ---
-elif menu_selecionado == "🆕 Novo Processo":
+# --- TELA: NOVO PROCESSO ---
+if menu_selecionado == "🆕 Novo Processo":
     st.subheader("🆕 Cadastrar Novo Processo")
     with st.form("cadastro_inicial_form", clear_on_submit=True):
         nome_c = st.text_input("Nome da Cliente")
         cpf_c = st.text_input("CPF (Apenas números)")
         senha_c = st.text_input("Senha da Cliente", type="password")
         grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
-        etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
+        etapa_c = st.selectbox("Etapa Inicial:", ["Fazer Caepf", "Pagar Gps", "Protocolar", "Concedido", "Indeferido", "Cumprir exigência"])
         
-        # Botão de salvar oficial alinhado perfeitamente
         if st.form_submit_button("💼 INICIAR CASO E SALVAR FICHA", use_container_width=True):
             if nome_c and cpf_c and senha_c:
                 agora = datetime.now().strftime("%d/%m/%Y %H:%M")
                 dados_proc = {
-                    "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, 
-                    "grupo_acao": grupo_c, "etapa_atual": etapa_c, 
-                    "ultima_atualizacao": agora, "usuario_responsavel": st.session_state['usuario_atual']
+                    "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, "grupo_acao": grupo_c, "etapa_atual": etapa_c,
+                    "ultima_atualizacao": grandmother_txt := agora, "usuario_responsavel": st.session_state['usuario_atual']
                 }
                 try:
                     supabase.table("processos_v3").insert(dados_proc).execute()
-                    st.success(f"Ficha de {nome_c} criada com sucesso! Vá na aba 'Processos' para gerenciar.")
+                    st.success(f"Ficha de {nome_c} criada na nuvem! Agora vá na aba 'Processos' para gerenciar.")
                 except Exception:
-                    st.error("Erro ao salvar no banco. Verifique as chaves ou se o CPF já existe.")
+                    st.error("Erro ao salvar. Verifique se o CPF já existe ou se as tabelas estão alinhadas.")
             else:
-                st.error("Preencha Nome, CPF e Senha.")
+                st.error("Preencha Nome, CPF e Senha da cliente.")
 
-
+# --- TELA: PROCESSOS (EXIBIÇÃO E ALTERAÇÃO DE STATUS SOLICITADOS) ---
+elif menu_selecionado == "🗂️ Processos":
+    st.subheader("🗂️ Gerenciamento de Casos e Status")
+    try:
+        res_proc = supabase.table("processos_v3").select("*").execute()
+        df_processos = pd.DataFrame(res_proc.data) if res_proc.data else pd.DataFrame()
+        
+        if not df_processos.empty:
+            cli_sel = st.selectbox("Selecione a cliente para verificar e alterar informações:", df_processos['nome_cliente'].tolist())
+            row_p = df_processos[df_processos['nome_cliente'] == cli_sel].iloc[0]
+            id_p = int(row_p['id'])
+            cpf_p = str(row_p['cpf'])
+            
+            # EXIBIÇÃO DE TODOS OS DADOS DE CADASTRO SOLICITADOS
+            st.write("---")
+            st.write("### 📋 Informações Atuais da Cliente")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                st.write(f"👤 **Nome:** {row_p['nome_cliente']}")
+                st.write(f"💳 **CPF:** {row_p['cpf']}")
+            with col_d2:
+                st.write(f"🔑 **Senha Visível:** `{row_p['senha_cliente']}`")
+                st.write(f"📅 **Última Atualização:** {row_p['ultima_atualizacao']}")
+            
+            st.write("---")
