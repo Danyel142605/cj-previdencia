@@ -49,13 +49,16 @@ def processar_e_converter_arquivo(arquivo_upload):
     if arquivo_upload is not None:
         nome_arquivo = arquivo_upload.name.lower()
         if nome_arquivo.endswith('.pdf'):
-            return arquivo_upload.read().hex()
+            # Transforma o arquivo em formato binário real aceito pelo Supabase
+            return arquivo_upload.read()
         elif nome_arquivo.endswith(('.jpg', '.jpeg', '.png')):
             image = Image.open(arquivo_upload)
-            if image.mode in ("RGBA", "P"): image = image.convert("RGB")
+            if image.mode in ("RGBA", "P"): 
+                image = image.convert("RGB")
             pdf_buffer = io.BytesIO()
             image.save(pdf_buffer, format="PDF")
-            return pdf_buffer.getvalue().hex()
+            # Transforma a imagem convertida em binário limpo
+            return pdf_buffer.getvalue()
     return None
 
 # 3. CONTROLE DE LOGIN / SESSÃO
