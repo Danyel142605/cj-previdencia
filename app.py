@@ -106,18 +106,22 @@ if not st.session_state['logado']:
                         st.session_state['perfil_atual'] = "Admin"
                         st.rerun()
                     
-                    resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
-                    if resposta.data:
-                        user = resposta.data[0] if isinstance(resposta.data, list) else resposta.data
-                        if user['status_liberacao'] == "Liberado":
-                            st.session_state['logado'] = True
-                            st.session_state['usuario_atual'] = user['nome']
-                            st.session_state['perfil_atual'] = user['perfil']
-                            st.rerun()
+                    try:
+                        resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
+                        dados = resposta.data
+                        if dados and len(dados) > 0:
+                            user = dados[0]
+                            if user.get('status_liberacao') == "Liberado":
+                                st.session_state['logado'] = True
+                                st.session_state['usuario_atual'] = user.get('nome', 'Usuário')
+                                st.session_state['perfil_atual'] = user.get('perfil', 'Colaborador')
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Conta aguardando liberação do Administrador.")
                         else:
-                            st.warning("⚠️ Conta aguardando liberação do Administrador.")
-                    else:
-                        st.error("Credenciais incorretas.")
+                            st.error("Credenciais incorretas ou usuário inexistente.")
+                    except Exception:
+                        st.error("Erro ao validar login com o servidor.")
         else:
             with st.form("cadastro_form_user"):
                 st.markdown("<p style='text-align: center; font-weight:600;'>Solicitar Novo Acesso</p>", unsafe_allow_html=True)
@@ -154,30 +158,33 @@ menu_selecionado = st.sidebar.radio("Navegação:", opcoes_menu)
 # --- TELA: GERENCIAR EQUIPE (ADM) ---
 if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
     st.subheader("👥 Controle de Usuários e Suporte (Painel ADM)")
-    res_users = supabase.table("usuarios_sistema").select("id, nome, identificador, perfil, status_liberacao").execute()
-    df_usuarios = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
-    
-    if not df_usuarios.empty:
-        st.dataframe(df_usuarios, use_container_width=True, hide_index=True)
-        st.write("---")
-        user_sel = st.selectbox("Selecione o Funcionário para modificar:", df_usuarios['nome'].tolist())
-        row_user = df_usuarios[df_usuarios['nome'] == user_sel].iloc[0]
+    try:
+        res_users = supabase.table("usuarios_sistema").select("*").execute()
+        df_usuarios = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
         
-        nova_lib = st.selectbox("Alterar Status de Acesso:", ["Liberado", "Aguardando Liberação"], index=["Liberado", "Aguardando Liberação"].index(row_user['status_liberacao']))
-        novo_perf = st.selectbox("Mudar Perfil/Cargo:", ["Colaborador", "Admin"], index=["Colaborador", "Admin"].index(row_user['perfil']))
-        
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
-                supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
-                st.success("Cadastro updated!")
-                st.rerun()
-        with col_b2:
-            if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
-                supabase.table("usuarios_sistema").delete().eq("id", int(row_user['id'])).execute()
-                st.success("Funcionário removido.")
-                st.rerun()
-    else: st.info("Nenhum funcionário cadastrado no banco de dados.")
+        if not df_usuarios.empty:
+            st.dataframe(df_usuarios[["id", "nome", "identificador", "perfil", "status_liberacao"]], use_container_width=True, hide_index=True)
+            st.write("---")
+            user_sel = st.selectbox("Selecione o Funcionário para modificar:", df_usuarios['nome'].tolist())
+            row_user = df_usuarios[df_usuarios['nome'] == user_sel].iloc[0]
+            
+            nova_lib = st.selectbox("Alterar Status de Acesso:", ["Liberado", "Aguardando Liberação"], index=["Liberado", "Aguardando Liberação"].index(row_user['status_liberacao']))
+            novo_perf = st.selectbox("Mudar Perfil/Cargo:", ["Colaborador", "Admin"], index=["Colaborador", "Admin"].index(row_user['perfil']))
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
+                    supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
+                    st.success("Cadastro atualizado na nuvem!")
+                    st.rerun()
+            with col_b2:
+                if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
+                    supabase.table("usuarios_sistema").delete().eq("id", int(row_user['id'])).execute()
+                    st.success("Funcionário removido.")
+                    st.rerun()
+        else: st.info("Nenhum funcionário cadastrado no banco de dados.")
+    except Exception:
+        st.error("Erro ao carregar lista de usuários.")
 
 # --- TELA: NOVO PROCESSO ---
 elif menu_selecionado == "🆕 Novo Processo":
@@ -190,11 +197,3 @@ elif menu_selecionado == "🆕 Novo Processo":
         etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
         
         up_rg = st.file_uploader("RG (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
-        up_cert = st.file_uploader("Certidão de Nascimento (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
-        up_res = st.file_uploader("Comprovante de Residência (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
-        
-        if st.form_submit_button("Salvar Novo Caso"):
-            if nome_c and cpf_c and senha_c:
-                agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-                
-                path_rg = enviar_documento_storage(cpf_c, "rg", up_rg)
