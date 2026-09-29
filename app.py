@@ -1,9 +1,9 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import datetime
 from PIL import Image
 import io
+from supabase import create_client, Client
 
 # 1. CONFIGURAÇÃO DA PÁGINA E ESTILIZAÇÃO ADVBOX
 st.set_page_config(page_title="CJ Previdência", layout="wide")
@@ -32,30 +32,30 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. BANCO DE DADOS
-conn = sqlite3.connect('escritorio_advocacia.db', check_same_thread=False)
-cursor = conn.cursor()
+# 2. CONEXÃO COM O SUPABASE (BANCO DE DADOS EM NUVEM PERMANENTE)
+SUPABASE_URL = 'https://supabase.co'
+SUPABASE_KEY = 'sb_publishable_P7sSXSgHemOw_JKiF1qBNw_hT1eAna6'
 
-cursor.execute("CREATE TABLE IF NOT EXISTS processos_v3 (id INTEGER PRIMARY KEY AUTOINCREMENT, nome_cliente TEXT, cpf TEXT UNIQUE, senha_cliente TEXT, grupo_acao TEXT, etapa_atual TEXT, status_caepf TEXT DEFAULT 'Pendente doc no drive', status_protocolo TEXT DEFAULT 'Pendente doc no drive', status_geral TEXT DEFAULT 'Analise', pdf_rg BLOB, pdf_residencia BLOB, pdf_certidao BLOB, pdf_contrato BLOB, pdf_caepf BLOB, pdf_gps BLOB, numero_inss TEXT, ultima_atualizacao TEXT, usuario_responsavel TEXT)")
-cursor.execute("CREATE TABLE IF NOT EXISTS usuarios_sistema (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT, identificador TEXT UNIQUE, senha TEXT, perfil TEXT DEFAULT 'Colaborador', status_liberacao TEXT DEFAULT 'Aguardando Liberação')")
+@st.cache_resource
+def iniciar_supabase():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Garante conta master do ADM
-cursor.execute("SELECT COUNT(*) FROM usuarios_sistema WHERE perfil = 'Admin'")
-if cursor.fetchone()[0] == 0:
-    cursor.execute("INSERT INTO usuarios_sistema (nome, identificador, senha, perfil, status_liberacao) VALUES ('Administrador Geral', 'admin@cjprevidencia.com.br', 'admin123', 'Admin', 'Liberado')")
-conn.commit()
+try:
+    supabase: Client = iniciar_supabase()
+except Exception:
+    st.error("Erro ao conectar ao banco de dados em nuvem. Verifique as chaves URL e KEY.")
 
 def processar_e_converter_arquivo(arquivo_upload):
     if arquivo_upload is not None:
         nome_arquivo = arquivo_upload.name.lower()
         if nome_arquivo.endswith('.pdf'):
-            return arquivo_upload.read()
+            return arquivo_upload.read().hex()
         elif nome_arquivo.endswith(('.jpg', '.jpeg', '.png')):
             image = Image.open(arquivo_upload)
             if image.mode in ("RGBA", "P"): image = image.convert("RGB")
             pdf_buffer = io.BytesIO()
             image.save(pdf_buffer, format="PDF")
-            return pdf_buffer.getvalue()
+            return pdf_buffer.getvalue().hex()
     return None
 
 # 3. CONTROLE DE LOGIN / SESSÃO
@@ -75,15 +75,19 @@ if not st.session_state['logado']:
                 login_input = st.text_input("E-mail ou CPF")
                 senha_input = st.text_input("Senha", type="password")
                 if st.form_submit_button("Entrar", use_container_width=True):
-                    cursor.execute("SELECT nome, perfil, status_liberacao FROM usuarios_sistema WHERE identificador = ? AND senha = ?", (login_input, senha_input))
-                    user_data = cursor.fetchone()
-                    if user_data:
-                        nome_user, perfil, status_lib = user_data
-                        if status_lib == "Liberado":
+                    if login_input == "admin@cjprevidencia.com.br" and senha_input == "admin123":
+                        st.session_state['logado'] = True
+                        st.session_state['usuario_atual'] = "Administrador Geral"
+                        st.session_state['perfil_atual'] = "Admin"
+                        st.rerun()
+                    
+                    resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
+                    if resposta.data:
+                        user = resposta.data[0] if isinstance(resposta.data, list) else resposta.data
+                        if user['status_liberacao'] == "Liberado":
                             st.session_state['logado'] = True
-                            st.session_state['usuario_atual'] = nome_user
-                            st.session_state['perfil_atual'] = perfil
-                            st.success("Logado com sucesso!")
+                            st.session_state['usuario_atual'] = user['nome']
+                            st.session_state['perfil_atual'] = user['perfil']
                             st.rerun()
                         else:
                             st.warning("⚠️ Conta aguardando liberação do Administrador.")
@@ -98,11 +102,12 @@ if not st.session_state['logado']:
                 tipo_perfil = st.selectbox("Perfil desejado:", ["Colaborador", "Admin"])
                 if st.form_submit_button("Finalizar Meu Cadastro", use_container_width=True):
                     if nome_novo and login_novo and senha_nova:
-                        cursor.execute("INSERT INTO usuarios_sistema (nome, identificador, senha, perfil, status_liberacao) VALUES (?, ?, ?, ?, 'Aguardando Liberação')", (nome_novo, login_novo, senha_nova, tipo_perfil))
-                        conn.commit()
-                        st.success("Cadastrado! Aguarde a liberação do Administrador.")
-                    else:
-                        st.error("Preencha todos os campos.")
+                        try:
+                            supabase.table("usuarios_sistema").insert({"nome": nome_novo, "identificador": login_novo, "senha": senha_nova, "perfil": tipo_perfil, "status_liberacao": "Aguardando Liberação"}).execute()
+                            st.success("Cadastrado! Aguarde a liberação do Administrador.")
+                        except Exception:
+                            st.error("Este identificador já existe ou erro na nuvem.")
+                    else: st.error("Preencha todos os campos.")
     st.stop()
 
 # 4. INTERFACE APÓS LOGIN
@@ -124,11 +129,12 @@ menu_selecionado = st.sidebar.radio("Navegação:", opcoes_menu)
 # --- TELA: GERENCIAR EQUIPE (ADM) ---
 if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
     st.subheader("👥 Controle de Usuários e Suporte (Painel ADM)")
-    df_usuarios = pd.read_sql_query("SELECT id, nome, identificador, perfil, status_liberacao FROM usuarios_sistema", conn)
-    st.dataframe(df_usuarios, use_container_width=True, hide_index=True)
+    res_users = supabase.table("usuarios_sistema").select("id, nome, identificador, perfil, status_liberacao").execute()
+    df_usuarios = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
     
-    st.write("---")
     if not df_usuarios.empty:
+        st.dataframe(df_usuarios, use_container_width=True, hide_index=True)
+        st.write("---")
         user_sel = st.selectbox("Selecione o Funcionário para modificar:", df_usuarios['nome'].tolist())
         row_user = df_usuarios[df_usuarios['nome'] == user_sel].iloc[0]
         
@@ -138,19 +144,15 @@ if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
-                cursor.execute("UPDATE usuarios_sistema SET status_liberacao = ?, perfil = ? WHERE id = ?", (nova_lib, novo_perf, int(row_user['id'])))
-                conn.commit()
-                st.success("Cadastro atualizado!")
+                supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
+                st.success("Cadastro atualizado na nuvem!")
                 st.rerun()
         with col_b2:
             if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
-                if row_user['identificador'] == "admin@cjprevidencia.com.br":
-                    st.error("Não é possível apagar o Administrador mestre.")
-                else:
-                    cursor.execute("DELETE FROM usuarios_sistema WHERE id = ?", (int(row_user['id']),))
-                    conn.commit()
-                    st.success("Funcionário removido.")
-                    st.rerun()
+                supabase.table("usuarios_sistema").delete().eq("id", int(row_user['id'])).execute()
+                st.success("Funcionário removido.")
+                st.rerun()
+    else: st.info("Nenhum funcionário cadastrado no banco de dados.")
 
 # --- TELA: NOVO PROCESSO ---
 elif menu_selecionado == "🆕 Novo Processo":
@@ -169,9 +171,18 @@ elif menu_selecionado == "🆕 Novo Processo":
         if st.form_submit_button("Salvar Novo Caso"):
             if nome_c and cpf_c and senha_c:
                 agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-                cursor.execute("INSERT INTO processos_v3 (nome_cliente, cpf, senha_cliente, grupo_acao, etapa_atual, pdf_rg, pdf_certidao, pdf_residencia, ultima_atualizacao, usuario_responsavel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (nome_c, cpf_c, senha_c, grupo_c, etapa_c, processar_e_converter_arquivo(up_rg), processar_e_converter_arquivo(up_cert), processar_e_converter_arquivo(up_res), agora, st.session_state['usuario_atual']))
-                conn.commit()
-                st.success("Ficha criada com sucesso!")
+                dados_proc = {
+                    "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, "grupo_acao": grupo_c, "etapa_atual": etapa_c,
+                    "pdf_rg": processar_e_converter_arquivo(up_rg), "pdf_certidao": processar_e_converter_arquivo(up_cert),
+                    "pdf_residencia": processar_e_converter_arquivo(up_res), "ultima_atualizacao": agora, "usuario_responsavel": st.session_state['usuario_atual']
+                }
+                supabase.table("processos_v3").insert(dados_proc).execute()
+                st.success("Ficha criada e salva permanentemente na nuvem!")
             else: st.error("Preencha Nome, CPF e Senha.")
 
 # --- TELA: PROCESSOS ---
+elif menu_selecionado == "🗂️ Processos":
+    st.subheader("🗂️ Gerenciamento de Casos")
+    res_proc = supabase.table("processos_v3").select("id, nome_cliente, cpf, grupo_acao, etapa_atual, status_caepf, status_protocolo, status_geral, numero_inss").execute()
+    df_processos = pd.DataFrame(res_proc.data) if res_proc.data else pd.DataFrame()
+    
