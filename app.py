@@ -66,17 +66,15 @@ def enviar_documento_storage(cpf, nome_doc, arquivo_upload):
         if pdf_bytes:
             nome_final_arquivo = f"{cpf}/{nome_doc}.pdf"
             try:
-                # Remove se o arquivo já existir para evitar duplicidade
                 supabase.storage.from_("documentos_cj").remove([nome_final_arquivo])
             except Exception:
                 pass
-            # Envia o arquivo novo de forma limpa
             supabase.storage.from_("documentos_cj").upload(nome_final_arquivo, pdf_bytes, {"content-type": "application/pdf"})
             return nome_final_arquivo
     return None
 
 # FUNÇÃO PARA GERAR LINK DE DOWNLOAD DO STORAGE
-def obter_link_documento(caminho_storage):
+def obtener_link_documento(caminho_storage):
     if caminho_storage:
         try:
             res = supabase.storage.from_("documentos_cj").create_signed_url(caminho_storage, 60)
@@ -110,7 +108,7 @@ if not st.session_state['logado']:
                     
                     resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
                     if resposta.data:
-                        user = resposta.data[0]
+                        user = resposta.data[0] if isinstance(resposta.data, list) else resposta.data
                         if user['status_liberacao'] == "Liberado":
                             st.session_state['logado'] = True
                             st.session_state['usuario_atual'] = user['nome']
@@ -172,7 +170,7 @@ if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
         with col_b1:
             if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
                 supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
-                st.success("Cadastro atualizado na nuvem!")
+                st.success("Cadastro updated!")
                 st.rerun()
         with col_b2:
             if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
@@ -199,3 +197,4 @@ elif menu_selecionado == "🆕 Novo Processo":
             if nome_c and cpf_c and senha_c:
                 agora = datetime.now().strftime("%d/%m/%Y %H:%M")
                 
+                path_rg = enviar_documento_storage(cpf_c, "rg", up_rg)
