@@ -29,10 +29,24 @@ st.markdown("""
             margin-bottom: 25px;
             padding-left: 10px;
         }
+        .stTabs [data-baseweb="tab"] {
+            font-weight: 600;
+            color: #555;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px 4px 0 0;
+            padding: 10px 20px;
+            margin-right: 4px;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #3c8dbc !important;
+            color: white !important;
+            border-color: #3c8dbc !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. CONEXÃO COM O SUPABASE (BANCO DE DADOS EM NUVEM PERMANENTE)
+# 2. CONEXÃO COM O SUPABASE
 SUPABASE_URL = 'https://supabase.co'
 SUPABASE_KEY = 'sb_publishable_P7sSXSgHemOw_JKiF1qBNw_hT1eAna6'
 
@@ -43,26 +57,44 @@ def iniciar_supabase():
 try:
     supabase: Client = iniciar_supabase()
 except Exception:
-    st.error("Erro ao conectar ao banco de dados em nuvem. Verifique as chaves URL e KEY.")
+    st.error("Erro ao conectar ao banco de dados em nuvem.")
 
-import base64  # Certifique-se de que essa linha está no topo do seu arquivo
-
-def processar_e_converter_arquivo(arquivo_upload):
+# FUNÇÃO COMPACTA E CORRETA DE CONVERSÃO E ENVIO PARA O STORAGE SEGURO
+def enviar_documento_storage(cpf, nome_doc, arquivo_upload):
     if arquivo_upload is not None:
-        nome_arquivo = arquivo_upload.name.lower()
-        if nome_arquivo.endswith('.pdf'):
-            # Lê o arquivo e converte para um texto Base64 seguro
-            return base64.b64encode(arquivo_upload.read()).decode('utf-8')
-        elif nome_arquivo.endswith(('.jpg', '.jpeg', '.png')):
-            image = Image.open(arquivo_upload)
-            if image.mode in ("RGBA", "P"): 
-                image = image.convert("RGB")
-            pdf_buffer = io.BytesIO()
-            image.save(pdf_buffer, format="PDF")
-            # Converte a imagem transformada em PDF para texto Base64 seguro
-            return base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+        try:
+            nome_arquivo = arquivo_upload.name.lower()
+            if nome_arquivo.endswith('.pdf'):
+                pdf_bytes = arquivo_upload.read()
+            else:
+                image = Image.open(arquivo_upload)
+                if image.mode in ("RGBA", "P"): 
+                    image = image.convert("RGB")
+                pdf_buffer = io.BytesIO()
+                image.save(pdf_buffer, format="PDF")
+                pdf_bytes = pdf_buffer.getvalue()
+            
+            nome_final_arquivo = f"{cpf}/{nome_doc}.pdf"
+            try:
+                supabase.storage.from_("documentos_cj").remove([nome_final_arquivo])
+            except Exception:
+                pass
+            
+            supabase.storage.from_("documentos_cj").upload(nome_final_arquivo, pdf_bytes, {"content-type": "application/pdf"})
+            return nome_final_arquivo
+        except Exception:
+            return None
     return None
 
+# FUNÇÃO PARA GERAR LINKS DIRETOS DO STORAGE DE ARQUIVOS
+def obtener_link_documento(caminho_storage):
+    if caminho_storage:
+        try:
+            res = supabase.storage.from_("documentos_cj").create_signed_url(caminho_storage, 60)
+            return res.get("signedURL")
+        except Exception:
+            return None
+    return None
 
 # 3. CONTROLE DE LOGIN / SESSÃO
 if 'logado' not in st.session_state: st.session_state['logado'] = False
@@ -87,18 +119,22 @@ if not st.session_state['logado']:
                         st.session_state['perfil_atual'] = "Admin"
                         st.rerun()
                     
-                    resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
-                    if resposta.data:
-                        user = resposta.data[0] if isinstance(resposta.data, list) else resposta.data
-                        if user['status_liberacao'] == "Liberado":
-                            st.session_state['logado'] = True
-                            st.session_state['usuario_atual'] = user['nome']
-                            st.session_state['perfil_atual'] = user['perfil']
-                            st.rerun()
+                    try:
+                        resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
+                        dados = resposta.data
+                        if dados and len(dados) > 0:
+                            user = dados[0] if isinstance(dados, list) else dados
+                            if user.get('status_liberacao') == "Liberado":
+                                st.session_state['logado'] = True
+                                st.session_state['usuario_atual'] = user.get('nome', 'Usuário')
+                                st.session_state['perfil_atual'] = user.get('perfil', 'Colaborador')
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Conta aguardando liberação do Administrador.")
                         else:
-                            st.warning("⚠️ Conta aguardando liberação do Administrador.")
-                    else:
-                        st.error("Credenciais incorretas.")
+                            st.error("Credenciais incorretas.")
+                    except Exception:
+                        st.error("Erro ao validar login.")
         else:
             with st.form("cadastro_form_user"):
                 st.markdown("<p style='text-align: center; font-weight:600;'>Solicitar Novo Acesso</p>", unsafe_allow_html=True)
@@ -132,63 +168,41 @@ if st.session_state['perfil_atual'] == "Admin":
 
 menu_selecionado = st.sidebar.radio("Navegação:", opcoes_menu)
 
-# --- TELA: GERENCIAR EQUIPE (ADM) ---
+# --- TELA: GERENCIAR EQUIPE ---
 if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
     st.subheader("👥 Controle de Usuários e Suporte (Painel ADM)")
-    res_users = supabase.table("usuarios_sistema").select("id, nome, identificador, perfil, status_liberacao").execute()
-    df_usuarios = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
-    
-    if not df_usuarios.empty:
-        st.dataframe(df_usuarios, use_container_width=True, hide_index=True)
-        st.write("---")
-        user_sel = st.selectbox("Selecione o Funcionário para modificar:", df_usuarios['nome'].tolist())
-        row_user = df_usuarios[df_usuarios['nome'] == user_sel].iloc[0]
+    try:
+        res_users = supabase.table("usuarios_sistema").select("*").execute()
+        df_usuarios = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
         
-        nova_lib = st.selectbox("Alterar Status de Acesso:", ["Liberado", "Aguardando Liberação"], index=["Liberado", "Aguardando Liberação"].index(row_user['status_liberacao']))
-        novo_perf = st.selectbox("Mudar Perfil/Cargo:", ["Colaborador", "Admin"], index=["Colaborador", "Admin"].index(row_user['perfil']))
-        
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
-                supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
-                st.success("Cadastro atualizado na nuvem!")
-                st.rerun()
-        with col_b2:
-            if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
-                supabase.table("usuarios_sistema").delete().eq("id", int(row_user['id'])).execute()
-                st.success("Funcionário removido.")
-                st.rerun()
-    else: st.info("Nenhum funcionário cadastrado no banco de dados.")
+        if not df_usuarios.empty:
+            st.dataframe(df_usuarios[["id", "nome", "identificador", "perfil", "status_liberacao"]], use_container_width=True, hide_index=True)
+            st.write("---")
+            user_sel = st.selectbox("Selecione o Funcionário para modificar:", df_usuarios['nome'].tolist())
+            row_user = df_usuarios[df_usuarios['nome'] == user_sel].iloc[0]
+            
+            nova_lib = st.selectbox("Alterar Status de Acesso:", ["Liberado", "Aguardando Liberação"], index=["Liberado", "Aguardando Liberação"].index(row_user['status_liberacao']))
+            novo_perf = st.selectbox("Mudar Perfil/Cargo:", ["Colaborador", "Admin"], index=["Colaborador", "Admin"].index(row_user['perfil']))
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("💾 Salvar Alterações do Funcionário", use_container_width=True):
+                    supabase.table("usuarios_sistema").update({"status_liberacao": nova_lib, "perfil": novo_perf}).eq("id", int(row_user['id'])).execute()
+                    st.success("Cadastro atualizado na nuvem!")
+                    st.rerun()
+            with col_b2:
+                if st.button("🗑️ DELETAR FUNCIONÁRIO", type="primary", use_container_width=True):
+                    supabase.table("usuarios_sistema").delete().eq("id", int(row_user['id'])).execute()
+                    st.success("Funcionário removido.")
+                    st.rerun()
+        else: st.info("Nenhum funcionário cadastrado no banco de dados.")
+    except Exception:
+        st.error("Erro ao carregar lista de usuários.")
 
-# --- TELA: NOVO PROCESSO ---
+# --- TELA: NOVO PROCESSO (FICHA DE CADASTRO LIMPA E SEM TRAVAS) ---
 elif menu_selecionado == "🆕 Novo Processo":
     st.subheader("🆕 Cadastrar Novo Processo")
-    with st.form("cadastro_processo_form", clear_on_submit=True):
+    with st.form("cadastro_inicial_form", clear_on_submit=True):
         nome_c = st.text_input("Nome da Cliente")
         cpf_c = st.text_input("CPF (Apenas números)")
         senha_c = st.text_input("Senha da Cliente", type="password")
-        grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
-        etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
-        
-        up_rg = st.file_uploader("RG (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
-        up_cert = st.file_uploader("Certidão de Nascimento (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
-        up_res = st.file_uploader("Comprovante de Residência (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
-        
-        if st.form_submit_button("Salvar Novo Caso"):
-            if nome_c and cpf_c and senha_c:
-                agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-                dados_proc = {
-                    "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, "grupo_acao": grupo_c, "etapa_atual": etapa_c,
-                    "pdf_rg": processar_e_converter_arquivo(up_rg), "pdf_certidao": processar_e_converter_arquivo(up_cert),
-                    "pdf_residencia": processar_e_converter_arquivo(up_res), "ultima_atualizacao": agora, "usuario_responsavel": st.session_state['usuario_atual']
-                }
-                supabase.table("processos_v3").insert(dados_proc).execute()
-                st.success("Ficha criada e salva permanentemente na nuvem!")
-            else: st.error("Preencha Nome, CPF e Senha.")
-
-# --- TELA: PROCESSOS ---
-elif menu_selecionado == "🗂️ Processos":
-    st.subheader("🗂️ Gerenciamento de Casos")
-    res_proc = supabase.table("processos_v3").select("id, nome_cliente, cpf, grupo_acao, etapa_atual, status_caepf, status_protocolo, status_geral, numero_inss").execute()
-    df_processos = pd.DataFrame(res_proc.data) if res_proc.data else pd.DataFrame()
-    
