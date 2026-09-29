@@ -32,7 +32,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. CONEXÃO COM O SUPABASE (BANCO DE DADOS EM NUVEM PERMANENTE)
+# 2. CONEXÃO COM O SUPABASE
 SUPABASE_URL = 'https://supabase.co'
 SUPABASE_KEY = 'sb_publishable_P7sSXSgHemOw_JKiF1qBNw_hT1eAna6'
 
@@ -43,19 +43,46 @@ def iniciar_supabase():
 try:
     supabase: Client = iniciar_supabase()
 except Exception:
-    st.error("Erro ao conectar ao banco de dados em nuvem. Verifique as chaves URL e KEY.")
+    st.error("Erro ao conectar ao banco de dados em nuvem.")
 
-def processar_e_converter_arquivo(arquivo_upload):
+# FUNÇÃO PARA CONVERTER IMAGEM EM PDF E RETORNAR BYTES LIMPOS
+def preparar_pdf_bytes(arquivo_upload):
     if arquivo_upload is not None:
         nome_arquivo = arquivo_upload.name.lower()
         if nome_arquivo.endswith('.pdf'):
-            return arquivo_upload.read().hex()
+            return arquivo_upload.read()
         elif nome_arquivo.endswith(('.jpg', '.jpeg', '.png')):
             image = Image.open(arquivo_upload)
             if image.mode in ("RGBA", "P"): image = image.convert("RGB")
             pdf_buffer = io.BytesIO()
             image.save(pdf_buffer, format="PDF")
-            return pdf_buffer.getvalue().hex()
+            return pdf_buffer.getvalue()
+    return None
+
+# FUNÇÃO PARA ENVIAR ARQUIVO PARA O STORAGE DO SUPABASE
+def enviar_documento_storage(cpf, nome_doc, arquivo_upload):
+    if arquivo_upload is not None:
+        pdf_bytes = preparar_pdf_bytes(arquivo_upload)
+        if pdf_bytes:
+            nome_final_arquivo = f"{cpf}/{nome_doc}.pdf"
+            try:
+                # Remove se o arquivo já existir para evitar duplicidade
+                supabase.storage.from_("documentos_cj").remove([nome_final_arquivo])
+            except Exception:
+                pass
+            # Envia o arquivo novo de forma limpa
+            supabase.storage.from_("documentos_cj").upload(nome_final_arquivo, pdf_bytes, {"content-type": "application/pdf"})
+            return nome_final_arquivo
+    return None
+
+# FUNÇÃO PARA GERAR LINK DE DOWNLOAD DO STORAGE
+def obter_link_documento(caminho_storage):
+    if caminho_storage:
+        try:
+            res = supabase.storage.from_("documentos_cj").create_signed_url(caminho_storage, 60)
+            return res.get("signedURL")
+        except Exception:
+            return None
     return None
 
 # 3. CONTROLE DE LOGIN / SESSÃO
@@ -83,7 +110,7 @@ if not st.session_state['logado']:
                     
                     resposta = supabase.table("usuarios_sistema").select("*").eq("identificador", login_input).eq("senha", senha_input).execute()
                     if resposta.data:
-                        user = resposta.data[0] if isinstance(resposta.data, list) else resposta.data
+                        user = resposta.data[0]
                         if user['status_liberacao'] == "Liberado":
                             st.session_state['logado'] = True
                             st.session_state['usuario_atual'] = user['nome']
@@ -171,18 +198,4 @@ elif menu_selecionado == "🆕 Novo Processo":
         if st.form_submit_button("Salvar Novo Caso"):
             if nome_c and cpf_c and senha_c:
                 agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-                dados_proc = {
-                    "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, "grupo_acao": grupo_c, "etapa_atual": etapa_c,
-                    "pdf_rg": processar_e_converter_arquivo(up_rg), "pdf_certidao": processar_e_converter_arquivo(up_cert),
-                    "pdf_residencia": processar_e_converter_arquivo(up_res), "ultima_atualizacao": agora, "usuario_responsavel": st.session_state['usuario_atual']
-                }
-                supabase.table("processos_v3").insert(dados_proc).execute()
-                st.success("Ficha criada e salva permanentemente na nuvem!")
-            else: st.error("Preencha Nome, CPF e Senha.")
-
-# --- TELA: PROCESSOS ---
-elif menu_selecionado == "🗂️ Processos":
-    st.subheader("🗂️ Gerenciamento de Casos")
-    res_proc = supabase.table("processos_v3").select("id, nome_cliente, cpf, grupo_acao, etapa_atual, status_caepf, status_protocolo, status_geral, numero_inss").execute()
-    df_processos = pd.DataFrame(res_proc.data) if res_proc.data else pd.DataFrame()
-    
+                
