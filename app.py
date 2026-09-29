@@ -203,6 +203,25 @@ if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
 elif menu_selecionado == "🆕 Novo Processo":
     st.subheader("🆕 Cadastrar Novo Processo")
     with st.form("cadastro_inicial_form", clear_on_submit=True):
-        nome_c = st.text_input("Nome da Cliente")
-        cpf_c = st.text_input("CPF (Apenas números)")
-        senha_c = st.text_input("Senha da Cliente", type="password")
+                nome_c = st.text_input("Nome da Cliente")
+                cpf_c = st.text_input("CPF (Apenas números)")
+                senha_c = st.text_input("Senha da Cliente", type="password")
+                        grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
+        etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
+        
+        # O botão de salvar oficial do seu escritório
+        if st.form_submit_button("💼 INICIAR CASO E SALVAR FICHA", use_container_width=True):
+            if nome_c and cpf_c and senha_c:
+                agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                dados_proc = {
+                    "nome_cliente": nome_c, "cpf": cpf_c, "senha_cliente": senha_c, "grupo_acao": grupo_c, "etapa_atual": etapa_c,
+                    "ultima_atualizacao": agora, "usuario_responsavel": st.session_state['usuario_atual']
+                }
+                try:
+                    supabase.table("processos_v3").insert(dados_proc).execute()
+                    st.success(f"Ficha de {nome_c} criada com sucesso! Vá na aba 'Processos' para gerenciar.")
+                except Exception:
+                    st.error("Erro ao salvar no banco. Verifique as chaves ou se o CPF já existe.")
+            else:
+                st.error("Preencha Nome, CPF e Senha.")
+
