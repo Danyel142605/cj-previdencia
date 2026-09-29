@@ -45,21 +45,24 @@ try:
 except Exception:
     st.error("Erro ao conectar ao banco de dados em nuvem. Verifique as chaves URL e KEY.")
 
+import base64  # Certifique-se de que essa linha está no topo do seu arquivo
+
 def processar_e_converter_arquivo(arquivo_upload):
     if arquivo_upload is not None:
         nome_arquivo = arquivo_upload.name.lower()
         if nome_arquivo.endswith('.pdf'):
-            # Transforma o arquivo em formato binário real aceito pelo Supabase
-            return arquivo_upload.read()
+            # Lê o arquivo e converte para um texto Base64 seguro
+            return base64.b64encode(arquivo_upload.read()).decode('utf-8')
         elif nome_arquivo.endswith(('.jpg', '.jpeg', '.png')):
             image = Image.open(arquivo_upload)
             if image.mode in ("RGBA", "P"): 
                 image = image.convert("RGB")
             pdf_buffer = io.BytesIO()
             image.save(pdf_buffer, format="PDF")
-            # Transforma a imagem convertida em binário limpo
-            return pdf_buffer.getvalue()
+            # Converte a imagem transformada em PDF para texto Base64 seguro
+            return base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
     return None
+
 
 # 3. CONTROLE DE LOGIN / SESSÃO
 if 'logado' not in st.session_state: st.session_state['logado'] = False
