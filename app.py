@@ -75,7 +75,7 @@ def enviar_documento_storage(cpf, nome_doc, arquivo_upload):
 
 # FUNÇÃO PARA GERAR LINK DE DOWNLOAD DO STORAGE
 def obtener_link_documento(caminho_storage):
-    if camino_storage:
+    if caminho_storage:
         try:
             res = supabase.storage.from_("documentos_cj").create_signed_url(caminho_storage, 60)
             return res.get("signedURL")
@@ -186,14 +186,16 @@ if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
     except Exception:
         st.error("Erro ao carregar lista de usuários.")
 
-# --- TELA: NOVO PROCESSO (RECONSTRUÍDA E COMPLETA) ---
+# --- TELA: NOVO PROCESSO (FORMULÁRIO LIVRE E SEGURO) ---
 elif menu_selecionado == "🆕 Novo Processo":
     st.subheader("🆕 Cadastrar Novo Processo")
-    with st.form("cadastro_processo_form", clear_on_submit=True):
-        nome_c = st.text_input("Nome da Cliente")
-        cpf_c = st.text_input("CPF (Apenas números)")
-        senha_c = st.text_input("Senha da Cliente", type="password")
-        grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
-        etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
-        
-        # TODOS OS CAMPOS DE ANEXOS QUE HAVIAM SUMIDO RECOLOCADOS AQUI:
+    
+    # Linhas de entrada normais fora de formulários para evitar cortes invisíveis
+    nome_c = st.text_input("Nome da Cliente")
+    cpf_c = st.text_input("CPF (Apenas números)")
+    senha_c = st.text_input("Senha da Cliente", type="password")
+    grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
+    etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
+    
+    st.write("---")
+    st.write("##### 📁 Documentação Digitalizada (Aceita Imagem ou PDF)")
