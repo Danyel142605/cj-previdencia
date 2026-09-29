@@ -204,3 +204,74 @@ elif menu_selecionado == "🗂️ Processos":
                 st.write(f"📅 **Última Atualização:** {row_p['ultima_atualizacao']}")
             
             st.write("---")
+            st.write("### ⚙️ Alterar e Tramitar Status")
+            
+            # OPÇÃO DE EDITAR OS STATUS PEDIDOS EXATAMENTE COMO SOLICITADO
+            lista_status = ["Fazer Caepf", "Pagar Gps", "Protocolar", "Concedido", "Indeferido", "Cumprir exigência"]
+            
+            status_atual = row_p['etapa_atual']
+            idx_status = lista_status.index(status_atual) if status_atual in lista_status else 0
+            
+            novo_status = st.selectbox("Selecione o Novo Status do Processo:", lista_status, index=idx_status)
+            grupo_at = st.selectbox("Grupo de Ação:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"], index=["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"].index(row_p['grupo_acao']) if row_p['grupo_acao'] in ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"] else 0)
+            
+            st.write("---")
+            st.write("##### 📁 Anexar Novos Documentos para esta Cliente")
+            up_rg = st.file_uploader("Atualizar RG (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"], key="rg_p")
+            up_cert = st.file_uploader("Atualizar Certidão (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"], key="cert_p")
+            up_res = st.file_uploader("Atualizar Comprovante Residência (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"], key="res_p")
+            
+            if st.button("💾 CONFIRMAR ALTERAÇÕES E ATUALIZAR STATUS", use_container_width=True, type="primary"):
+                agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+                up_dados = {
+                    "etapa_atual": novo_status,
+                    "grupo_acao": grupo_at,
+                    "ultima_atualizacao": agora,
+                    "usuario_responsavel": st.session_state['usuario_atual']
+                }
+                
+                if up_rg: up_dados["pdf_rg"] = enviar_documento_storage(cpf_p, "rg", up_rg)
+                if up_cert: up_dados["pdf_certidao"] = enviar_documento_storage(cpf_p, "certidao", up_cert)
+                if up_res: up_dados["pdf_residencia"] = enviar_documento_storage(cpf_p, "residencia", up_res)
+                
+                supabase.table("processos_v3").update(up_dados).eq("id", id_p).execute()
+                st.success("Status e informações atualizados com absoluto sucesso!")
+                st.rerun()
+                
+            # LINKS DE DOWNLOAD AUTOMÁTICOS
+            st.write("---")
+            st.write("##### 📥 Documentos Disponíveis em PDF")
+            for nome_label, campo_banco in [("RG", "pdf_rg"), ("Certidão", "pdf_certidao"), ("Comprovante Residência", "pdf_residencia")]:
+                caminho_arq = row_p.get(campo_banco) if pd.notna(row_p.get(campo_banco)) else None
+                if caminho_arq and str(caminho_arq) != "None":
+                    link_pdf = obtener_link_documento(caminho_arq)
+                    if link_pdf:
+                        st.markdown(f"🔗 **[Abrir / Baixar PDF do {nome_label}]({link_pdf})**")
+                        
+        else: st.info("Nenhum processo localizado no banco de dados.")
+    except Exception:
+        st.error("Erro ao processar as informações.")
+
+# --- TELA: STATUS ---
+elif menu_selecionado == "📊 Status":
+    st.subheader("📊 Filtros Rápidos de Status")
+    try:
+        res_st = supabase.table("processos_v3").select("*").execute()
+        if res_st.data:
+            df_f = pd.DataFrame(res_st.data)
+            st.dataframe(df_f[["nome_cliente", "cpf", "grupo_acao", "etapa_atual", "ultima_atualizacao"]], use_container_width=True, hide_index=True)
+        else: st.info("Nenhum caso ativo localizado.")
+    except Exception: st.error("Erro ao carregar tela de status.")
+
+# --- TELA: RELATÓRIOS ---
+elif menu_selecionado == "📋 Relatórios":
+    st.subheader("📋 Relatório Diário de Casos")
+    try:
+        res_rel = supabase.table("processos_v3").select("*").execute()
+        if res_rel.data:
+            df_r = pd.DataFrame(res_rel.data)
+            st.dataframe(df_r[["nome_cliente", "cpf", "grupo_acao", "etapa_atual", "ultima_atualizacao", "usuario_responsavel"]], use_container_width=True, hide_index=True)
+            csv = df_r.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(label="📥 Baixar Planilha Geral (.CSV)", data=csv, file_name="Relatorio_CJ_Previdencia.csv", mime="text/csv")
+        else: st.info("Nenhum registro para exportação.")
+    except Exception: st.error("Erro ao gerar relatório de dados.")
