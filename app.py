@@ -206,8 +206,8 @@ elif menu_selecionado == "🆕 Novo Processo":
                 nome_c = st.text_input("Nome da Cliente")
                 cpf_c = st.text_input("CPF (Apenas números)")
                 senha_c = st.text_input("Senha da Cliente", type="password")
-                        grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
-        etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
+                grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
+                etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
         
         # O botão de salvar oficial do seu escritório
         if st.form_submit_button("💼 INICIAR CASO E SALVAR FICHA", use_container_width=True):
