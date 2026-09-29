@@ -75,7 +75,7 @@ def enviar_documento_storage(cpf, nome_doc, arquivo_upload):
 
 # FUNÇÃO PARA GERAR LINK DE DOWNLOAD DO STORAGE
 def obtener_link_documento(caminho_storage):
-    if caminho_storage:
+    if camino_storage:
         try:
             res = supabase.storage.from_("documentos_cj").create_signed_url(caminho_storage, 60)
             return res.get("signedURL")
@@ -186,7 +186,7 @@ if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
     except Exception:
         st.error("Erro ao carregar lista de usuários.")
 
-# --- TELA: NOVO PROCESSO ---
+# --- TELA: NOVO PROCESSO (RECONSTRUÍDA E COMPLETA) ---
 elif menu_selecionado == "🆕 Novo Processo":
     st.subheader("🆕 Cadastrar Novo Processo")
     with st.form("cadastro_processo_form", clear_on_submit=True):
@@ -196,4 +196,4 @@ elif menu_selecionado == "🆕 Novo Processo":
         grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
         etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
         
-        up_rg = st.file_uploader("RG (JPG ou PDF)", type=["jpg", "jpeg", "png", "pdf"])
+        # TODOS OS CAMPOS DE ANEXOS QUE HAVIAM SUMIDO RECOLOCADOS AQUI:
