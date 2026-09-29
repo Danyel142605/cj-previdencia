@@ -29,6 +29,21 @@ st.markdown("""
             margin-bottom: 25px;
             padding-left: 10px;
         }
+        /* Estilização das Abas de Processo */
+        .stTabs [data-baseweb="tab"] {
+            font-weight: 600;
+            color: #555;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px 4px 0 0;
+            padding: 10px 20px;
+            margin-right: 4px;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #3c8dbc !important;
+            color: white !important;
+            border-color: #3c8dbc !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -186,16 +201,9 @@ if menu_selecionado == "👥 Gerenciar Equipe (ADM)":
     except Exception:
         st.error("Erro ao carregar lista de usuários.")
 
-# --- TELA: NOVO PROCESSO (FORMULÁRIO LIVRE E SEGURO) ---
+# --- TELA: NOVO PROCESSO (CADASTRO INICIAL) ---
 elif menu_selecionado == "🆕 Novo Processo":
     st.subheader("🆕 Cadastrar Novo Processo")
     
-    # Linhas de entrada normais fora de formulários para evitar cortes invisíveis
-    nome_c = st.text_input("Nome da Cliente")
-    cpf_c = st.text_input("CPF (Apenas números)")
-    senha_c = st.text_input("Senha da Cliente", type="password")
-    grupo_c = st.selectbox("Grupo de Ações:", ["PREVIDENCIÁRIO", "Administrativa", "Civil", "Trabalhista"])
-    etapa_c = st.selectbox("Etapa Inicial:", ["Aguardando Assinatura do contrato", "Caepf", "Pagamento GPS", "Protocolar"])
-    
-    st.write("---")
-    st.write("##### 📁 Documentação Digitalizada (Aceita Imagem ou PDF)")
+    with st.form("cadastro_inicial_form", clear_on_submit=True):
+        nome_c = st.text_input("Nome da Cliente")
